@@ -1,14 +1,262 @@
 <html>
-  
-<head>
-  <title>Fun pysics game</title>
-  <script src="cdnjs.cloudflare.com"></script>
-</head>
-  
-<body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fun Physics Game — Space Newton's 1st Law Demo</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: radial-gradient(ellipse at center, #00111a 0%, #000 70%); color: #e6f7ff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+      #controls { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; width: 320px; }
+      #controls h1 { margin: 0 0 8px 0; font-size: 16px; }
+      #desc { font-size: 13px; line-height: 1.3; margin-bottom: 8px; }
+      #canvas-container { position: absolute; inset: 0; }
+      #credits { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #99d6ff; }
+      button, label { font-size: 13px; }
+      .small { font-size: 12px; color:#cdeeff; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js" integrity="" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <div id="controls">
+      <h1>Space: Newton's 1st Law Demo</h1>
+      <div id="desc">This interactive demo visualizes Newton's 1st Law: an object in motion stays in motion unless acted on by a net external force. Zero gravity (space). Click a ship to select it, then use the "Thrust" buttons or arrow keys to apply force. Drag other objects to collide. Good as a 3-person project after ~2 days' work.</div>
+      <div>
+        <button id="impulse-left">Thrust ←</button>
+        <button id="impulse-right">Thrust →</button>
+        <button id="impulse-up">Thrust ↑</button>
+        <button id="impulse-stop">Stop (zero velocity)</button>
+      </div>
+      <div style="margin-top:8px">
+        <label><input type="checkbox" id="showVectors" checked> Show velocity vectors & trails</label><br>
+        <label><input type="checkbox" id="enableFriction"> Enable small damping (simulated drag)</label>
+      </div>
+      <div class="small" style="margin-top:8px">Controls: Click a body to select. Arrow keys also apply thrust. Spacebar toggles pause. Drag bodies with mouse.</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="credits">Project for 3 people — Contributors: Alice, Bob, You (placeholder). Built as a 2-day demo.</div>
+
     <script>
-      
+      // Simple Matter.js demo configured for 'space' (no gravity) showing Newton's 1st law
+      const { Engine, Render, Runner, Bodies, Composite, Mouse, MouseConstraint, Events, Body, Vector } = Matter;
+
+      const width = Math.max(window.innerWidth, 800);
+      const height = Math.max(window.innerHeight, 600);
+
+      const engine = Engine.create();
+      // Zero gravity to simulate space
+      engine.gravity.y = 0;
+      engine.gravity.x = 0;
+
+      const render = Render.create({
+        element: document.getElementById('canvas-container'),
+        engine: engine,
+        options: {
+          width, height,
+          wireframes: false,
+          background: 'transparent',
+        }
+      });
+
+      Render.run(render);
+      const runner = Runner.create();
+      Runner.run(runner, engine);
+
+      // Walls so objects don't disappear off-screen
+      const wallThickness = 60;
+      const walls = [
+        Bodies.rectangle(width/2, -wallThickness/2, width, wallThickness, { isStatic: true, render:{visible:false} }),
+        Bodies.rectangle(width/2, height + wallThickness/2, width, wallThickness, { isStatic: true, render:{visible:false} }),
+        Bodies.rectangle(-wallThickness/2, height/2, wallThickness, height, { isStatic: true, render:{visible:false} }),
+        Bodies.rectangle(width + wallThickness/2, height/2, wallThickness, height, { isStatic: true, render:{visible:false} }),
+      ];
+      Composite.add(engine.world, walls);
+
+      // Create a spaceship (circle) with initial velocity
+      const ship = Bodies.circle(width*0.3, height*0.5, 28, {
+        restitution: 0.9,
+        frictionAir: 0, // no drag by default
+        render: { fillStyle: '#88f', strokeStyle: '#dff', lineWidth: 2 }
+      });
+      Body.setVelocity(ship, { x: 6, y: -2 }); // initial velocity shows 'motion'
+
+      // A second body to demonstrate collisions (massive asteroid)
+      const asteroid = Bodies.polygon(width*0.7, height*0.4, 7, 40, {
+        restitution: 0.8,
+        frictionAir: 0,
+        render: { fillStyle: '#886633', strokeStyle: '#ffddaa', lineWidth: 1 }
+      });
+      Body.setVelocity(asteroid, { x: -2, y: 1 });
+
+      // Small debris pieces to show multiple inertial objects
+      const debris = [];
+      for (let i = 0; i < 6; i++) {
+        const d = Bodies.circle(width*0.5 + (Math.random()-0.5)*200, height*0.6 + (Math.random()-0.5)*200, 8 + Math.random()*8, {
+          restitution: 0.95, frictionAir: 0, render:{ fillStyle: '#aaffaa' }
+        });
+        Body.setVelocity(d, { x: (Math.random()-0.5)*4, y: (Math.random()-0.5)*4 });
+        debris.push(d);
+      }
+
+      Composite.add(engine.world, [ship, asteroid, ...debris]);
+
+      // Mouse control to drag bodies
+      const mouse = Mouse.create(render.canvas);
+      const mouseConstraint = MouseConstraint.create(engine, {
+        mouse,
+        constraint: { stiffness: 0.2, render: { visible: false } }
+      });
+      Composite.add(engine.world, mouseConstraint);
+
+      render.mouse = mouse;
+
+      // Selection handling
+      let selected = null;
+      Events.on(mouseConstraint, 'mousedown', (e) => {
+        selected = e.body || null;
+      });
+      Events.on(mouseConstraint, 'mouseup', () => { /* keep selected until next click */ });
+
+      // Custom drawing for velocity vectors & trails
+      const ctx = render.context;
+      let showVectors = document.getElementById('showVectors').checked;
+      let enableFriction = document.getElementById('enableFriction').checked;
+      const trails = new Map();
+
+      function drawOverlays() {
+        const bodies = Composite.allBodies(engine.world);
+
+        // draw trails
+        if (showVectors) {
+          for (const b of bodies) {
+            if (b.isStatic) continue;
+            if (!trails.has(b.id)) trails.set(b.id, []);
+            const t = trails.get(b.id);
+            t.push({x: b.position.x, y: b.position.y});
+            if (t.length > 80) t.shift();
+
+            ctx.beginPath();
+            ctx.moveTo(b.position.x, b.position.y);
+            for (let i = t.length - 1; i >= 0; i--) {
+              const p = t[i];
+              ctx.lineTo(p.x, p.y);
+            }
+            ctx.strokeStyle = 'rgba(150,220,255,0.15)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.closePath();
+
+            // velocity vector
+            const vel = b.velocity;
+            const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y);
+            if (speed > 0.05) {
+              const head = { x: b.position.x + vel.x*8, y: b.position.y + vel.y*8 };
+              ctx.beginPath();
+              ctx.moveTo(b.position.x, b.position.y);
+              ctx.lineTo(head.x, head.y);
+              ctx.strokeStyle = '#66f';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              ctx.closePath();
+
+              // arrow head
+              ctx.beginPath();
+              ctx.moveTo(head.x, head.y);
+              ctx.lineTo(head.x - vel.y*0.8, head.y + vel.x*0.8);
+              ctx.lineTo(head.x + vel.y*0.8, head.y - vel.x*0.8);
+              ctx.fillStyle = '#66f';
+              ctx.fill();
+              ctx.closePath();
+            }
+          }
+        } else {
+          // clear trails
+          trails.clear();
+        }
+
+        // overlay text explaining Newton's 1st law
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(12, 120, 300, 70);
+        ctx.fillStyle = '#dff';
+        ctx.font = '12px system-ui';
+        ctx.fillText("Newton's 1st Law (in plain words):", 18, 136);
+        ctx.fillText("A body in motion remains in motion at constant velocity", 18, 152);
+        ctx.fillText("unless acted on by a net external force (thrust, collisions).", 18, 168);
+
+        // highlight selected body
+        if (selected) {
+          ctx.beginPath();
+          ctx.arc(selected.position.x, selected.position.y, (selected.circleRadius||30)+8, 0, Math.PI*2);
+          ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.closePath();
+        }
+      }
+
+      // After render, draw overlays
+      Events.on(render, 'afterRender', drawOverlays);
+
+      // Buttons to apply impulse/thrust
+      function applyThrustToSelected(dx, dy) {
+        const body = selected || ship;
+        const forceScale = 0.03; // impulse magnitude
+        Body.applyForce(body, body.position, { x: dx * forceScale, y: dy * forceScale });
+      }
+
+      document.getElementById('impulse-left').addEventListener('click', () => applyThrustToSelected(-1, 0));
+      document.getElementById('impulse-right').addEventListener('click', () => applyThrustToSelected(1, 0));
+      document.getElementById('impulse-up').addEventListener('click', () => applyThrustToSelected(0, -1));
+      document.getElementById('impulse-stop').addEventListener('click', () => {
+        const b = selected || ship;
+        Body.setVelocity(b, { x: 0, y: 0 });
+      });
+
+      // Keyboard controls
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'ArrowLeft') applyThrustToSelected(-1, 0);
+        if (e.code === 'ArrowRight') applyThrustToSelected(1, 0);
+        if (e.code === 'ArrowUp') applyThrustToSelected(0, -1);
+        if (e.code === 'Space') {
+          engine.enabled = !engine.enabled;
+        }
+      });
+
+      // showVectors & friction toggles
+      document.getElementById('showVectors').addEventListener('change', (e) => { showVectors = e.target.checked; });
+      document.getElementById('enableFriction').addEventListener('change', (e) => {
+        enableFriction = e.target.checked;
+        // apply a small global air friction by setting bodies' frictionAir
+        Composite.allBodies(engine.world).forEach(b => {
+          if (!b.isStatic) b.frictionAir = enableFriction ? 0.02 : 0;
+        });
+      });
+
+      // Resize handling
+      window.addEventListener('resize', () => {
+        const w = Math.max(window.innerWidth, 800);
+        const h = Math.max(window.innerHeight, 600);
+        render.options.width = w; render.options.height = h;
+        render.canvas.width = w; render.canvas.height = h;
+      });
+
+      // Helpful on-screen info for players
+      const infoInterval = setInterval(() => {
+        // remove bodies that get too close to walls (optional cleanup)
+      }, 5000);
+
+      // Basic collision event to show collisions as 'external forces' changing motion
+      Events.on(engine, 'collisionStart', (ev) => {
+        ev.pairs.forEach(pair => {
+          const a = pair.bodyA, b = pair.bodyB;
+          // create a short flash effect by changing render fill briefly
+          const originalA = a.render.fillStyle, originalB = b.render.fillStyle;
+          a.render.fillStyle = '#fff'; b.render.fillStyle = '#fff';
+          setTimeout(() => { if (a.render) a.render.fillStyle = originalA; if (b.render) b.render.fillStyle = originalB; }, 120);
+        });
+      });
+
+      // End of script
     </script>
-</body>
-  
+  </body>
 </html>
