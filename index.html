@@ -1,60 +1,56 @@
+<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fun Physics Game — Space Newton's 1st Law Demo</title>
+    <title>Launch Lab — Newton in Motion</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600&display=swap" rel="stylesheet">
     <style>
-      html, body { height: 100%; margin: 0; background: radial-gradient(ellipse at center, #00111a 0%, #000 70%); color: #e6f7ff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
-      #controls { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; width: 320px; }
-      #controls h1 { margin: 0 0 8px 0; font-size: 16px; }
-      #desc { font-size: 13px; line-height: 1.3; margin-bottom: 8px; }
-      #canvas-container { position: absolute; inset: 0; }
-      #credits { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #99d6ff; }
-      button, label { font-size: 13px; }
-      .small { font-size: 12px; color:#cdeeff; }
+      html, body { height: 100%; margin: 0; overflow: hidden; background: linear-gradient(160deg, #050d17 0%, #0c1c2c 55%, #050910 100%); color: #e5f7ff; font-family: 'Archivo', 'Segoe UI', sans-serif; }
+      canvas { display: block; }
+      #hud { position: absolute; top: 14px; left: 14px; padding: 12px 14px; background: #0f1a28; border: none; border-radius: 4px; max-width: 420px; pointer-events: auto; }
+      #hud .title { font-weight: 600; letter-spacing: 0.2px; color: #e5f7ff; }
+      #hud .body { font-size: 13px; line-height: 1.45; color: #d9ecff; margin-top: 4px; }
+      #hud .keys { margin-top: 6px; font-size: 12px; color: #c3d8ee; }
+      #hud .controls { margin-top: 8px; pointer-events: auto; }
+      #hud input[type=range] { width: 160px; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js" integrity="" crossorigin="anonymous"></script>
   </head>
   <body>
-    <div id="controls">
-      <h1>Space: Newton's 1st Law Demo</h1>
-      <div id="desc">This interactive demo visualizes Newton's 1st Law: an object in motion stays in motion unless acted on by a net external force. Zero gravity (space). Click a ship to select it, then use the "Thrust" buttons or arrow keys to apply force. Drag other objects to collide. Good as a 3-person project after ~2 days' work.</div>
-      <div>
-        <button id="impulse-left">Thrust ←</button>
-        <button id="impulse-right">Thrust →</button>
-        <button id="impulse-up">Thrust ↑</button>
-        <button id="impulse-stop">Stop (zero velocity)</button>
+    <div id="hud">
+      <div class="title">Launch Lab</div>
+      <div class="body">Drag and pull back from the glowing ring to aim and release to launch.</div>
+      <div class="keys">Keys: R reset shot | C toggle follow | H hide/show HUD | WASD pan the camera | Scroll/Pinch to zoom | Space/Enter to continue reading. </div>
+      <div class="controls">
+        <label>Mass: <span id="massValue">1.0</span> kg</label>
+        <br>
+        <input id="massSlider" type="range" min="0.2" max="6" step="0.1" value="1.0">
       </div>
-      <div style="margin-top:8px">
-        <label><input type="checkbox" id="showVectors" checked> Show velocity vectors & trails</label><br>
-        <label><input type="checkbox" id="enableFriction"> Enable small damping (simulated drag)</label>
-      </div>
-      <div class="small" style="margin-top:8px">Controls: Click a body to select. Arrow keys also apply thrust. Spacebar toggles pause. Drag bodies with mouse.</div>
     </div>
 
-    <div id="canvas-container"></div>
-
-    <div id="credits">Project for 3 people — Contributors: Alice, Bob, You (placeholder). Built as a 2-day demo.</div>
-
     <script>
-      // Simple Matter.js demo configured for 'space' (no gravity) showing Newton's 1st law
-      const { Engine, Render, Runner, Bodies, Composite, Mouse, MouseConstraint, Events, Body, Vector } = Matter;
+      const { Engine, Render, Runner, Bodies, Composite, Events, Body, Vector, Mouse } = Matter;
 
-      const width = Math.max(window.innerWidth, 800);
-      const height = Math.max(window.innerHeight, 600);
+      const VIEW_WIDTH = Math.max(window.innerWidth, 960);
+      const VIEW_HEIGHT = Math.max(window.innerHeight, 600);
+      const MAP_WIDTH = 3200;
+      const MAP_HEIGHT = 1900;
 
-      const engine = Engine.create();
-      // Zero gravity to simulate space
-      engine.gravity.y = 0;
+      const engine = Engine.create({ enableSleeping: false });
       engine.gravity.x = 0;
+      engine.gravity.y = 0;
 
       const render = Render.create({
-        element: document.getElementById('canvas-container'),
-        engine: engine,
+        element: document.body,
+        engine,
         options: {
-          width, height,
+          width: VIEW_WIDTH,
+          height: VIEW_HEIGHT,
           wireframes: false,
           background: 'transparent',
+          pixelRatio: window.devicePixelRatio || 1
         }
       });
 
@@ -62,201 +58,635 @@
       const runner = Runner.create();
       Runner.run(runner, engine);
 
-      // Walls so objects don't disappear off-screen
-      const wallThickness = 60;
-      const walls = [
-        Bodies.rectangle(width/2, -wallThickness/2, width, wallThickness, { isStatic: true, render:{visible:false} }),
-        Bodies.rectangle(width/2, height + wallThickness/2, width, wallThickness, { isStatic: true, render:{visible:false} }),
-        Bodies.rectangle(-wallThickness/2, height/2, wallThickness, height, { isStatic: true, render:{visible:false} }),
-        Bodies.rectangle(width + wallThickness/2, height/2, wallThickness, height, { isStatic: true, render:{visible:false} }),
+      const hud = document.getElementById('hud');
+      let hudVisible = true;
+
+      function toggleHud() {
+        hudVisible = !hudVisible;
+        hud.style.display = hudVisible ? 'block' : 'none';
+      }
+
+      const world = engine.world;
+
+      const boundaries = [
+        Bodies.rectangle(MAP_WIDTH / 2, -80, MAP_WIDTH, 160, { isStatic: true, label: 'boundary', render: { visible: false } }),
+        Bodies.rectangle(MAP_WIDTH / 2, MAP_HEIGHT + 80, MAP_WIDTH, 160, { isStatic: true, label: 'boundary', render: { visible: false } }),
+        Bodies.rectangle(-80, MAP_HEIGHT / 2, 160, MAP_HEIGHT, { isStatic: true, label: 'boundary', render: { visible: false } }),
+        Bodies.rectangle(MAP_WIDTH + 80, MAP_HEIGHT / 2, 160, MAP_HEIGHT, { isStatic: true, label: 'boundary', render: { visible: false } })
       ];
-      Composite.add(engine.world, walls);
+      Composite.add(world, boundaries);
 
-      // Create a spaceship (circle) with initial velocity
-      const ship = Bodies.circle(width*0.3, height*0.5, 28, {
-        restitution: 0.9,
-        frictionAir: 0, // no drag by default
-        render: { fillStyle: '#88f', strokeStyle: '#dff', lineWidth: 2 }
-      });
-      Body.setVelocity(ship, { x: 6, y: -2 }); // initial velocity shows 'motion'
+      const obstacles = [
+        Bodies.circle(1100, MAP_HEIGHT * 0.35, 120, { isStatic: true, render: { fillStyle: '#143d55', strokeStyle: '#65c9ff', lineWidth: 2 } }),
+        Bodies.circle(2500, MAP_HEIGHT * 0.7, 150, { isStatic: true, render: { fillStyle: '#1b2237', strokeStyle: '#9ad0ff', lineWidth: 1 } }),
+        Bodies.rectangle(1700, MAP_HEIGHT * 0.55, 360, 42, { isStatic: true, angle: 0.35, render: { fillStyle: '#1c2d3d' } }),
+        Bodies.rectangle(2100, MAP_HEIGHT * 0.3, 420, 40, { isStatic: true, angle: -0.48, render: { fillStyle: '#1c2d3d' } }),
+        Bodies.polygon(2700, MAP_HEIGHT * 0.45, 6, 90, { isStatic: true, render: { fillStyle: '#253f55', strokeStyle: '#85d7ff' } }),
+        Bodies.rectangle(1300, MAP_HEIGHT * 0.8, 520, 40, { isStatic: true, angle: 0.05, render: { fillStyle: '#182431' } })
+      ];
+      Composite.add(world, obstacles);
 
-      // A second body to demonstrate collisions (massive asteroid)
-      const asteroid = Bodies.polygon(width*0.7, height*0.4, 7, 40, {
-        restitution: 0.8,
-        frictionAir: 0,
-        render: { fillStyle: '#886633', strokeStyle: '#ffddaa', lineWidth: 1 }
-      });
-      Body.setVelocity(asteroid, { x: -2, y: 1 });
+      // Add some fixed, non-random dynamic physics objects (interactive)
+      const interactiveBalls = [
+        Bodies.circle(900, MAP_HEIGHT * 0.45, 28, { restitution: 0.8, density: 0.002, label: 'interactive', render: { fillStyle: '#ffd47a' } }),
+        Bodies.circle(1300, MAP_HEIGHT * 0.6, 24, { restitution: 0.7, density: 0.0022, label: 'interactive', render: { fillStyle: '#b3d9ff' } }),
+        Bodies.circle(1600, MAP_HEIGHT * 0.32, 36, { restitution: 0.6, density: 0.003, label: 'interactive', render: { fillStyle: '#ff9aa2' } }),
+        Bodies.circle(1900, MAP_HEIGHT * 0.5, 20, { restitution: 0.5, density: 0.0018, label: 'interactive', render: { fillStyle: '#fff1b8' } }),
+        Bodies.circle(2100, MAP_HEIGHT * 0.2, 34, { restitution: 0.65, density: 0.0026, label: 'interactive', render: { fillStyle: '#c7ffb3' } }),
+        Bodies.circle(2400, MAP_HEIGHT * 0.6, 30, { restitution: 0.7, density: 0.0025, label: 'interactive', render: { fillStyle: '#c7ffb3' } }),
+        Bodies.rectangle(700, MAP_HEIGHT * 0.75, 48, 48, { restitution: 0.4, density: 0.004, label: 'interactive', render: { fillStyle: '#ffe0d4' } }),
+        Bodies.rectangle(2700, MAP_HEIGHT * 0.35, 60, 36, { restitution: 0.5, density: 0.0032, label: 'interactive', render: { fillStyle: '#d4f1d4' } })
+      ];
+      Composite.add(world, interactiveBalls);
 
-      // Small debris pieces to show multiple inertial objects
-      const debris = [];
-      for (let i = 0; i < 6; i++) {
-        const d = Bodies.circle(width*0.5 + (Math.random()-0.5)*200, height*0.6 + (Math.random()-0.5)*200, 8 + Math.random()*8, {
-          restitution: 0.95, frictionAir: 0, render:{ fillStyle: '#aaffaa' }
+      // add a small line of balls (Newton-cradle style) that you can hit in sequence
+      const cradleBalls = [];
+      const cradleCount = 6;
+      const cradleRadius = 18;
+      const cradleStartX = launchPad.x + 120;
+      for (let i = 0; i < cradleCount; i++) {
+        const x = cradleStartX + i * (cradleRadius * 2.2);
+        const y = launchPad.y;
+        const b = Bodies.circle(x, y, cradleRadius, { restitution: 0.98, density: 0.002, label: 'interactive', render: { fillStyle: '#d4f0ff' } });
+        cradleBalls.push(b);
+      }
+      Composite.add(world, cradleBalls);
+
+      // store initial states for reset
+      const interactiveInitialStates = interactiveBalls.map(b => ({ body: b, x: b.position.x, y: b.position.y, angle: b.angle || 0 }));
+      const cradleInitialStates = cradleBalls.map(b => ({ body: b, x: b.position.x, y: b.position.y, angle: b.angle || 0 }));
+
+      const starfield = Array.from({ length: 140 }, () => ({
+        x: Math.random() * MAP_WIDTH,
+        y: Math.random() * MAP_HEIGHT,
+        r: Math.random() * 1.6 + 0.4,
+        a: Math.random() * 0.4 + 0.4
+      }));
+
+      const launchPad = { x: 420, y: MAP_HEIGHT / 2 };
+      let projectile = null;
+      let shotCount = 0;
+      let projectileMass = 1.0;
+      // expose default mass in HUD display (slider sets this)
+      let followingTarget = null;
+      let followEnabled = true;
+      let firstLaunchTimerStarted = false;
+      let postLaunchTip = { visible: false, text: "Press R to reset, or drag in the inner ring to launch again." };
+
+      function spawnProjectile() {
+        if (projectile) Composite.remove(world, projectile);
+        projectile = Bodies.circle(launchPad.x, launchPad.y, 22, {
+          frictionAir: 0.002,
+          restitution: 0.9,
+          density: 0.001,
+          render: { fillStyle: '#6ec8ff', strokeStyle: '#c7ecff', lineWidth: 2 }
         });
-        Body.setVelocity(d, { x: (Math.random()-0.5)*4, y: (Math.random()-0.5)*4 });
-        debris.push(d);
+        Body.setVelocity(projectile, { x: 0, y: 0 });
+        Body.setAngularVelocity(projectile, 0);
+        Composite.add(world, projectile);
+        // apply user-selected mass
+        if (typeof Body.setMass === 'function') {
+          try { Body.setMass(projectile, projectileMass); } catch(e) { /* ignore */ }
+        }
+        followingTarget = projectile;
       }
 
-      Composite.add(engine.world, [ship, asteroid, ...debris]);
+      spawnProjectile();
 
-      // Mouse control to drag bodies
       const mouse = Mouse.create(render.canvas);
-      const mouseConstraint = MouseConstraint.create(engine, {
-        mouse,
-        constraint: { stiffness: 0.2, render: { visible: false } }
-      });
-      Composite.add(engine.world, mouseConstraint);
+      mouse.pixelRatio = render.options.pixelRatio;
 
-      render.mouse = mouse;
-
-      // Selection handling
-      let selected = null;
-      Events.on(mouseConstraint, 'mousedown', (e) => {
-        selected = e.body || null;
-      });
-      Events.on(mouseConstraint, 'mouseup', () => { /* keep selected until next click */ });
-
-      // Custom drawing for velocity vectors & trails
-      const ctx = render.context;
-      let showVectors = document.getElementById('showVectors').checked;
-      let enableFriction = document.getElementById('enableFriction').checked;
-      const trails = new Map();
-
-      function drawOverlays() {
-        const bodies = Composite.allBodies(engine.world);
-
-        // draw trails
-        if (showVectors) {
-          for (const b of bodies) {
-            if (b.isStatic) continue;
-            if (!trails.has(b.id)) trails.set(b.id, []);
-            const t = trails.get(b.id);
-            t.push({x: b.position.x, y: b.position.y});
-            if (t.length > 80) t.shift();
-
-            ctx.beginPath();
-            ctx.moveTo(b.position.x, b.position.y);
-            for (let i = t.length - 1; i >= 0; i--) {
-              const p = t[i];
-              ctx.lineTo(p.x, p.y);
-            }
-            ctx.strokeStyle = 'rgba(150,220,255,0.15)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.closePath();
-
-            // velocity vector
-            const vel = b.velocity;
-            const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y);
-            if (speed > 0.05) {
-              const head = { x: b.position.x + vel.x*8, y: b.position.y + vel.y*8 };
-              ctx.beginPath();
-              ctx.moveTo(b.position.x, b.position.y);
-              ctx.lineTo(head.x, head.y);
-              ctx.strokeStyle = '#66f';
-              ctx.lineWidth = 2;
-              ctx.stroke();
-              ctx.closePath();
-
-              // arrow head
-              ctx.beginPath();
-              ctx.moveTo(head.x, head.y);
-              ctx.lineTo(head.x - vel.y*0.8, head.y + vel.x*0.8);
-              ctx.lineTo(head.x + vel.y*0.8, head.y - vel.x*0.8);
-              ctx.fillStyle = '#66f';
-              ctx.fill();
-              ctx.closePath();
-            }
+      // HUD mass slider wiring
+      const massSlider = document.getElementById('massSlider');
+      const massValueLabel = document.getElementById('massValue');
+      if (massSlider && massValueLabel) {
+        massValueLabel.textContent = projectileMass.toFixed(1);
+        massSlider.addEventListener('input', (e) => {
+          const v = parseFloat(e.target.value);
+          projectileMass = v;
+          massValueLabel.textContent = v.toFixed(1);
+          if (projectile && typeof Body.setMass === 'function') {
+            try { Body.setMass(projectile, projectileMass); } catch (err) { /* ignore */ }
           }
-        } else {
-          // clear trails
-          trails.clear();
-        }
-
-        // overlay text explaining Newton's 1st law
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(12, 120, 300, 70);
-        ctx.fillStyle = '#dff';
-        ctx.font = '12px system-ui';
-        ctx.fillText("Newton's 1st Law (in plain words):", 18, 136);
-        ctx.fillText("A body in motion remains in motion at constant velocity", 18, 152);
-        ctx.fillText("unless acted on by a net external force (thrust, collisions).", 18, 168);
-
-        // highlight selected body
-        if (selected) {
-          ctx.beginPath();
-          ctx.arc(selected.position.x, selected.position.y, (selected.circleRadius||30)+8, 0, Math.PI*2);
-          ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          ctx.closePath();
-        }
-      }
-
-      // After render, draw overlays
-      Events.on(render, 'afterRender', drawOverlays);
-
-      // Buttons to apply impulse/thrust
-      function applyThrustToSelected(dx, dy) {
-        const body = selected || ship;
-        const forceScale = 0.03; // impulse magnitude
-        Body.applyForce(body, body.position, { x: dx * forceScale, y: dy * forceScale });
-      }
-
-      document.getElementById('impulse-left').addEventListener('click', () => applyThrustToSelected(-1, 0));
-      document.getElementById('impulse-right').addEventListener('click', () => applyThrustToSelected(1, 0));
-      document.getElementById('impulse-up').addEventListener('click', () => applyThrustToSelected(0, -1));
-      document.getElementById('impulse-stop').addEventListener('click', () => {
-        const b = selected || ship;
-        Body.setVelocity(b, { x: 0, y: 0 });
-      });
-
-      // Keyboard controls
-      window.addEventListener('keydown', (e) => {
-        if (e.code === 'ArrowLeft') applyThrustToSelected(-1, 0);
-        if (e.code === 'ArrowRight') applyThrustToSelected(1, 0);
-        if (e.code === 'ArrowUp') applyThrustToSelected(0, -1);
-        if (e.code === 'Space') {
-          engine.enabled = !engine.enabled;
-        }
-      });
-
-      // showVectors & friction toggles
-      document.getElementById('showVectors').addEventListener('change', (e) => { showVectors = e.target.checked; });
-      document.getElementById('enableFriction').addEventListener('change', (e) => {
-        enableFriction = e.target.checked;
-        // apply a small global air friction by setting bodies' frictionAir
-        Composite.allBodies(engine.world).forEach(b => {
-          if (!b.isStatic) b.frictionAir = enableFriction ? 0.02 : 0;
         });
+      }
+
+      let isDragging = false;
+      let dragStart = null;
+      let dragCurrent = null;
+      let tutorialSeen = false;
+      let freezeIndex = 0;
+      let isFrozen = false;
+
+      const baseFirstLawCard = {
+        title: "Newton's First Law",
+        lines: [
+          "An object at rest stays at rest, and an object in motion stays in motion unless acted upon by an outside force.",
+          "Objects keep their motion until an external force changes it."
+        ]
+      };
+
+      const velocityCard = {
+        title: 'Velocity',
+        lines: [
+          'Green arrows show the direction and relative speed (velocity) of an object.',
+          'They point where the object is moving and grow longer for faster motion.'
+        ]
+      };
+
+      const explainCard = {
+        title: 'Explanation',
+        lines: [
+          'Newton\'s First Law means objects keep doing what they\'re doing unless a force acts on them.',
+          'In this context, a collision is an outside force that changes motion.'
+        ]
+      };
+
+      // freezeCards holds the sequence shown during freeze frames; start with First Law then velocity card
+      let freezeCards = [ baseFirstLawCard, velocityCard ];
+
+      function stopRunner() {
+        Runner.stop(runner);
+      }
+
+      function startRunner() {
+        Runner.run(runner, engine);
+      }
+
+      function startFreezeFrames(force = false) {
+        if (tutorialSeen && !force) return;
+        tutorialSeen = true;
+        freezeIndex = 0;
+        // ramp engine timeScale down smoothly over 300ms, then stop the runner and show freeze UI
+        rampTimeScale(0.01, 300, () => {
+          isFrozen = true;
+          stopRunner();
+        });
+      }
+
+      function advanceFreeze() {
+        if (!isFrozen) return;
+        freezeIndex += 1;
+        if (freezeIndex >= freezeCards.length) {
+          isFrozen = false;
+          startRunner();
+          // ramp time back to normal smoothly over 300ms
+          rampTimeScale(1, 300);
+        }
+      }
+
+      // ramp the engine timeScale from current value to `target` over `duration` ms
+      let _rampRAF = null;
+      function rampTimeScale(target, duration, cb) {
+        if (_rampRAF) cancelAnimationFrame(_rampRAF);
+        const start = performance.now();
+        const from = engine.timing.timeScale || 1;
+        function step(now) {
+          const t = Math.min(1, (now - start) / Math.max(1, duration));
+          // ease in-out quad
+          const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+          engine.timing.timeScale = from + (target - from) * eased;
+          if (t < 1) {
+            _rampRAF = requestAnimationFrame(step);
+          } else {
+            _rampRAF = null;
+            engine.timing.timeScale = target;
+            if (cb) cb();
+          }
+        }
+        _rampRAF = requestAnimationFrame(step);
+      }
+
+      // track whether we've shown a collision freeze-frame already
+      let collisionFreezeShown = false;
+
+      // temporary collision message shown on HUD (kept for backward compatibility but not used for freeze events)
+      const collisionMessage = { visible: false, text: '', timer: null };
+      function showCollisionMessage(text, duration = 5000) {
+        collisionMessage.text = text;
+        collisionMessage.visible = true;
+        if (collisionMessage.timer) clearTimeout(collisionMessage.timer);
+        collisionMessage.timer = setTimeout(() => { collisionMessage.visible = false; collisionMessage.timer = null; }, duration);
+      }
+
+      function screenToWorld(pos) {
+        const bounds = render.bounds;
+        const canvasClientW = render.canvas.clientWidth;
+        const canvasClientH = render.canvas.clientHeight;
+        const scaleX = (bounds.max.x - bounds.min.x) / canvasClientW;
+        const scaleY = (bounds.max.y - bounds.min.y) / canvasClientH;
+        return { x: bounds.min.x + pos.x * scaleX, y: bounds.min.y + pos.y * scaleY };
+      }
+
+      function worldToScreen(pos) {
+        const bounds = render.bounds;
+        const canvasClientW = render.canvas.clientWidth;
+        const canvasClientH = render.canvas.clientHeight;
+        const scaleX = canvasClientW / (bounds.max.x - bounds.min.x);
+        const scaleY = canvasClientH / (bounds.max.y - bounds.min.y);
+        return { x: (pos.x - bounds.min.x) * scaleX, y: (pos.y - bounds.min.y) * scaleY };
+      }
+
+      render.canvas.addEventListener('pointerdown', () => {
+        if (!projectile) spawnProjectile();
+        const worldPos = screenToWorld(mouse.position);
+        const dist = Vector.magnitude(Vector.sub(projectile.position, worldPos));
+        if (dist < 140) {
+          isDragging = true;
+          dragStart = worldPos;
+          dragCurrent = worldPos;
+        }
       });
 
-      // Resize handling
-      window.addEventListener('resize', () => {
-        const w = Math.max(window.innerWidth, 800);
-        const h = Math.max(window.innerHeight, 600);
-        render.options.width = w; render.options.height = h;
-        render.canvas.width = w; render.canvas.height = h;
+      render.canvas.addEventListener('pointermove', () => {
+        if (isDragging) {
+          dragCurrent = screenToWorld(mouse.position);
+        }
       });
 
-      // Helpful on-screen info for players
-      const infoInterval = setInterval(() => {
-        // remove bodies that get too close to walls (optional cleanup)
-      }, 5000);
+      render.canvas.addEventListener('pointerup', () => {
+        if (!isDragging) return;
+        dragCurrent = screenToWorld(mouse.position);
+        const aim = Vector.sub(projectile.position, dragCurrent);
+        const force = Vector.mult(aim, 0.00022);
+        Body.setVelocity(projectile, { x: 0, y: 0 });
+        Body.applyForce(projectile, projectile.position, force);
+        shotCount += 1;
+        if (shotCount === 1 && !firstLaunchTimerStarted) {
+          firstLaunchTimerStarted = true;
+          setTimeout(() => {
+            postLaunchTip.visible = true;
+            setTimeout(() => { postLaunchTip.visible = false; }, 7000);
+          }, 5000);
+        }
+        isDragging = false;
+        dragStart = null;
+        dragCurrent = null;
+        if (followEnabled) followingTarget = projectile;
+        // start the slow-down -> freeze sequence immediately; ramp handled inside startFreezeFrames
+        startFreezeFrames();
+      });
 
-      // Basic collision event to show collisions as 'external forces' changing motion
+      let camera = { x: launchPad.x + 220, y: launchPad.y, zoom: 1 };
+      const keys = new Set();
+
+      function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+      function lerp(a, b, t) { return a + (b - a) * t; }
+
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyH') { toggleHud(); }
+        if (isFrozen) {
+          if (e.code === 'Space' || e.code === 'Enter') advanceFreeze();
+          return;
+        }
+        keys.add(e.code);
+        if (e.code === 'KeyR') { resetScene(); spawnProjectile(); }
+        if (e.code === 'KeyC') { followEnabled = !followEnabled; if (!followEnabled) followingTarget = null; else followingTarget = projectile; }
+      });
+
+      window.addEventListener('keyup', (e) => keys.delete(e.code));
+
+      render.canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        camera.zoom = clamp(camera.zoom * delta, 0.45, 1.75);
+      }, { passive: false });
+
+      Events.on(engine, 'afterUpdate', () => {
+        const panSpeed = 12 / camera.zoom;
+        if (keys.has('KeyA')) camera.x -= panSpeed;
+         if (keys.has('KeyD')) camera.x += panSpeed;
+        if (keys.has('KeyW')) camera.y -= panSpeed;
+        if (keys.has('KeyS')) camera.y += panSpeed;
+
+        if (followEnabled && followingTarget) {
+          camera.x = lerp(camera.x, followingTarget.position.x, 0.08);
+        camera.y = lerp(camera.y, followingTarget.position.y, 0.08);
+        }
+
+        const halfW = (render.options.width * 0.5) / camera.zoom;
+        const halfH = (render.options.height * 0.5) / camera.zoom;
+          camera.x = clamp(camera.x, halfW, MAP_WIDTH - halfW);
+        camera.y = clamp(camera.y, halfH, MAP_HEIGHT - halfH);
+
+        render.bounds.min.x = camera.x - halfW;
+        render.bounds.max.x = camera.x + halfW;
+        render.bounds.min.y = camera.y - halfH;
+        render.bounds.max.y = camera.y + halfH;
+        Render.lookAt(render, render.bounds);
+
+        if (projectile && (projectile.position.x < -300 || projectile.position.x > MAP_WIDTH + 300 || projectile.position.y < -300 || projectile.position.y > MAP_HEIGHT + 300)) {
+          spawnProjectile();
+        }
+      });
+
       Events.on(engine, 'collisionStart', (ev) => {
         ev.pairs.forEach(pair => {
           const a = pair.bodyA, b = pair.bodyB;
-          // create a short flash effect by changing render fill briefly
+
           const originalA = a.render.fillStyle, originalB = b.render.fillStyle;
-          a.render.fillStyle = '#fff'; b.render.fillStyle = '#fff';
-          setTimeout(() => { if (a.render) a.render.fillStyle = originalA; if (b.render) b.render.fillStyle = originalB; }, 120);
+
+          // flash hit color
+          a.render.fillStyle = '#f7f7f7';
+          b.render.fillStyle = '#f7f7f7';
+          setTimeout(() => {
+            if (a.render) a.render.fillStyle = originalA;
+            if (b.render) b.render.fillStyle = originalB;
+          }, 120);
+
+          // educational messages: check interactions involving projectile
+          try {
+            if (projectile) {
+              if (a === projectile || b === projectile) {
+                const other = a === projectile ? b : a;
+                if (!collisionFreezeShown) {
+                  // formulate a readable name for the collided object
+                  let objName = 'object';
+                  if (other.label === 'interactive') objName = 'nearby ball';
+                  else if (other.label === 'boundary') objName = 'wall';
+                  else if (other.label) objName = other.label;
+
+                  const exampleCard = {
+                    title: 'Example',
+                    lines: [
+                      `When it interacts with an outside force (the ${objName}), it is acted upon and its motion will change.`,
+                      `Observe how the launched ball's path and speed change after the collision.`
+                    ]
+                  };
+
+                  // show an explanation card (not duplicate of the first tutorial) then the example
+                  freezeCards = [ explainCard, exampleCard ];
+                  collisionFreezeShown = true;
+                  // force show even if tutorial was already shown
+                  startFreezeFrames(true);
+                }
+              }
+            }
+          } catch (err) {
+            // swallow any unexpected errors in collision messaging
+            console.error(err);
+          }
         });
       });
 
-      // End of script
+      // Reset interactive physics objects to their initial states
+      function resetPhysicsObjects() {
+        try {
+          if (Array.isArray(interactiveInitialStates)) {
+            for (const s of interactiveInitialStates) {
+              const b = s.body;
+              Body.setPosition(b, { x: s.x, y: s.y });
+              Body.setVelocity(b, { x: 0, y: 0 });
+              Body.setAngularVelocity(b, 0);
+              Body.setAngle(b, s.angle || 0);
+            }
+          }
+          if (Array.isArray(cradleInitialStates)) {
+            for (const s of cradleInitialStates) {
+              const b = s.body;
+              Body.setPosition(b, { x: s.x, y: s.y });
+              Body.setVelocity(b, { x: 0, y: 0 });
+              Body.setAngularVelocity(b, 0);
+              Body.setAngle(b, s.angle || 0);
+            }
+          }
+        } catch (err) {
+          console.error('resetPhysicsObjects error', err);
+        }
+      }
+
+      function resetScene() {
+        // reset interactive objects
+        resetPhysicsObjects();
+        // reset projectile if present
+        if (projectile) {
+          Body.setPosition(projectile, { x: launchPad.x, y: launchPad.y });
+          Body.setVelocity(projectile, { x: 0, y: 0 });
+          Body.setAngularVelocity(projectile, 0);
+          Body.setAngle(projectile, 0);
+        }
+        // clear first-launch tip/timers
+        postLaunchTip.visible = false;
+        firstLaunchTimerStarted = false;
+        // allow collision freeze to show again
+        collisionFreezeShown = false;
+      }
+
+      const ctx = render.context;
+
+      function drawWorldDecor() {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = 'rgba(4, 12, 22, 0.3)';
+        ctx.fillRect(0, 0, render.canvas.width, render.canvas.height);
+        ctx.restore();
+      }
+
+      function drawParallaxStars() {
+        const parallax = 0.32;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.fillStyle = '#050d17';
+        ctx.fillRect(0, 0, render.canvas.width, render.canvas.height);
+        ctx.globalAlpha = 0.9;
+        for (const star of starfield) {
+          const virtual = {
+            x: camera.x + (star.x - camera.x) * parallax,
+            y: camera.y + (star.y - camera.y) * parallax
+          };
+          const s = worldToScreen(virtual);
+          if (s.x >= 0 && s.x <= render.canvas.width && s.y >= 0 && s.y <= render.canvas.height) {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, star.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(140, 200, 255, ${star.a})`;
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
+        // draw green velocity arrows for projectile and interactive objects
+        function drawVelocityArrows() {
+          if (isFrozen) return;
+          if (!render || !render.context) return;
+          const canvas = render.canvas;
+          const pixelScale = canvas.width / canvas.clientWidth;
+          ctx.save();
+          ctx.setTransform(1,0,0,1,0,0);
+          ctx.strokeStyle = '#7aff7a';
+          ctx.fillStyle = '#7aff7a';
+          ctx.lineWidth = 2 * pixelScale;
+
+          const bodies = [];
+          if (projectile) bodies.push(projectile);
+          if (typeof interactiveBalls !== 'undefined' && interactiveBalls.length) bodies.push(...interactiveBalls);
+
+
+          const VIS_SCALE = 12; // visual scale for velocity vector (smaller, less long)
+          const SPEED_HIDE_THRESHOLD = 0.02; // don't draw arrows for near-zero speed
+          const MAX_WORLD_LEN = 120; // cap arrow world length
+
+          for (const b of bodies) {
+            const startWorld = b.position;
+            const v = b.velocity || { x: 0, y: 0 };
+            const speed = Math.sqrt(v.x * v.x + v.y * v.y);
+            if (speed < SPEED_HIDE_THRESHOLD) continue;
+
+            const dir = { x: v.x / speed, y: v.y / speed };
+            const worldLen = Math.min(speed * VIS_SCALE, MAX_WORLD_LEN);
+            const endWorld = { x: startWorld.x + dir.x * worldLen, y: startWorld.y + dir.y * worldLen };
+
+            const s1 = worldToScreen(startWorld);
+            const s2 = worldToScreen(endWorld);
+            const x1 = s1.x * pixelScale;
+            const y1 = s1.y * pixelScale;
+            const x2 = s2.x * pixelScale;
+            const y2 = s2.y * pixelScale;
+
+            // draw line
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            // draw arrow head
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            const headLen = 6 * pixelScale;
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          ctx.restore();
+        }
+
+      function drawAimOverlay() {
+        if (!projectile) return;
+        const screenPos = worldToScreen(projectile.position);
+        const canvas = render.canvas;
+        const pixelScale = canvas.width / canvas.clientWidth; // maps CSS pixels to canvas pixels
+        const x = screenPos.x * pixelScale;
+        const y = screenPos.y * pixelScale;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.beginPath();
+        ctx.arc(x, y, 28 * pixelScale, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(155, 225, 255, 0.55)';
+        ctx.lineWidth = 3 * pixelScale;
+        ctx.stroke();
+        ctx.closePath();
+
+        ctx.beginPath();
+        ctx.arc(x, y, 70 * pixelScale, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(120, 200, 255, 0.15)';
+        ctx.lineWidth = 1.6 * pixelScale;
+        ctx.stroke();
+        ctx.closePath();
+
+        if (isDragging && dragCurrent) {
+          const dragScreen = worldToScreen(dragCurrent);
+          const dx = dragScreen.x * pixelScale;
+          const dy = dragScreen.y * pixelScale;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(dx, dy);
+          ctx.strokeStyle = '#83e0ff';
+          ctx.lineWidth = 3 * pixelScale;
+          ctx.stroke();
+          ctx.closePath();
+
+          const pull = Vector.magnitude(Vector.sub(projectile.position, dragCurrent));
+          const barPx = Math.min(pull / 2.2, 180) * pixelScale;
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+          ctx.fillRect(x - 95 * pixelScale, y + 42 * pixelScale, 190 * pixelScale, 10 * pixelScale);
+          ctx.fillStyle = '#7be3ff';
+          ctx.fillRect(x - 95 * pixelScale, y + 42 * pixelScale, barPx, 10 * pixelScale);
+        }
+        ctx.restore();
+      }
+
+      function drawHUD() {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const boxHeight = postLaunchTip.visible ? 92 : 64;
+        ctx.fillStyle = 'rgba(0, 8, 20, 0.55)';
+        ctx.fillRect(16, 108, 280, boxHeight);
+        ctx.fillStyle = '#bfe6ff';
+        ctx.font = '12px "Archivo", sans-serif';
+        ctx.fillText(`Shot: ${shotCount || 0}`, 26, 132);
+        ctx.fillText(`Camera: ${followEnabled ? 'Follow' : 'Free roam'}`, 26, 152);
+        if (postLaunchTip.visible) {
+          ctx.fillStyle = '#e5f7ff';
+          ctx.fillText(postLaunchTip.text, 26, 172);
+        }
+        if (collisionMessage.visible) {
+          ctx.fillStyle = '#ffefd6';
+          ctx.font = '12px "Archivo", sans-serif';
+          const y = 172 + (postLaunchTip.visible ? 20 : 0);
+          ctx.fillText(collisionMessage.text, 26, y);
+        }
+        ctx.restore();
+      }
+
+      function drawFreezeCards() {
+        if (!isFrozen) return;
+        const card = freezeCards[freezeIndex];
+        if (!card) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const DPR = window.devicePixelRatio || 1;
+        const W = render.canvas.width;
+        const H = render.canvas.height;
+        ctx.fillStyle = 'rgba(0, 6, 12, 0.85)';
+        ctx.fillRect(0, 0, W, H);
+
+        // centered card
+        const cardW = Math.min(W * 0.7, 900);
+        const cardH = Math.min(H * 0.45, 520);
+        const cx = W / 2;
+        const cy = H / 2;
+        const left = cx - cardW / 2;
+        const top = cy - cardH / 2;
+        ctx.fillStyle = 'rgba(3,12,18,0.85)';
+        ctx.fillRect(left, top, cardW, cardH);
+
+        ctx.fillStyle = '#9fe0ff';
+        ctx.textAlign = 'center';
+        ctx.font = `${32 * DPR}px "Archivo", sans-serif`;
+        ctx.fillText(card.title, cx, top + 60 * DPR);
+
+        ctx.font = `${18 * DPR}px "Archivo", sans-serif`;
+        ctx.fillStyle = '#d9f2ff';
+        ctx.fillText(card.lines[0], cx, top + 120 * DPR);
+        ctx.fillText(card.lines[1], cx, top + 150 * DPR);
+
+        ctx.fillStyle = '#7bb8ff';
+        ctx.font = `${14 * DPR}px "Archivo", sans-serif`;
+        ctx.fillText('Press Space or Enter to continue', cx, top + cardH - 30 * DPR);
+        ctx.restore();
+      }
+
+      Events.on(render, 'afterRender', () => {
+        drawWorldDecor();
+        drawAimOverlay();
+        drawHUD();
+        drawFreezeCards();
+        drawParallaxStars();
+        drawVelocityArrows();
+      });
+
+      window.addEventListener('resize', () => {
+        const w = Math.max(window.innerWidth, 960);
+        const h = Math.max(window.innerHeight, 600);
+        render.options.width = w;
+        render.options.height = h;
+        render.canvas.width = w;
+        render.canvas.height = h;
+      });
     </script>
   </body>
 </html>
